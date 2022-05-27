@@ -1,9 +1,6 @@
 #include <tiramisu/auto_scheduler/ast.h>
 #include <tiramisu/auto_scheduler/evaluator.h>
 
-
-
-
 namespace tiramisu::auto_scheduler
 {
     std::vector<optimization_type> generator_state::optimization_list;
@@ -1984,56 +1981,147 @@ std::string syntax_tree::get_schedule_str()
 
     return schedule_str;
 }
+// Added by L
+std::string syntax_tree::get_schedule_str_comp(tiramisu::computation *comp)
+{
+    std::vector<optimization_info> schedule_vect = this->get_schedule();
+    std::string schedule_str;
+
+    for (auto optim: schedule_vect)
+    {
+        std::string comps_list_str = "";
+        if (find(optim.comps.begin(), optim.comps.end(), comp) != optim.comps.end())
+            comps_list_str = "{C"+std::to_string(get_computation_index(comp))+"}";
+        else
+            continue;
+
+        switch(optim.type) {
+            case optimization_type::FUSION:
+                schedule_str += "F("+comps_list_str+",L"+std::to_string(optim.l0)+"),";
+                break;
+
+            case optimization_type::SHIFTING:
+                schedule_str += "Sh("+comps_list_str+",L"+std::to_string(optim.l0)+","+std::to_string(optim.l0_fact)+"),";
+                break;
+
+
+//            case optimization_type::UNFUSE:
+//                schedule_str += "F(L"+std::to_string(optim.l0)+",L"+std::to_string(optim.l1)+"),";
+//                break;
+
+            case optimization_type::INTERCHANGE:
+                schedule_str += "I("+comps_list_str+",L"+std::to_string(optim.l0)+",L"+std::to_string(optim.l1)+"),";
+                break;
+
+            case optimization_type::TILING:
+                if (optim.nb_l == 2)
+                    schedule_str += "T2("+comps_list_str+",L"+std::to_string(optim.l0)+",L"+std::to_string(optim.l1)+","+
+                            std::to_string(optim.l0_fact)+","+std::to_string(optim.l1_fact)+"),";
+                else if (optim.nb_l == 3)
+                    schedule_str += "T3("+comps_list_str+",L"+std::to_string(optim.l0)+",L"+std::to_string(optim.l1)+",L"+std::to_string(optim.l2)+","+
+                            std::to_string(optim.l0_fact)+","+std::to_string(optim.l1_fact)+","+std::to_string(optim.l2_fact)+"),";
+                break;
+
+            case optimization_type::UNROLLING:
+                schedule_str += "U("+comps_list_str+",L"+std::to_string(optim.l0)+","+std::to_string(optim.l0_fact)+"),";
+                break;
+
+            case optimization_type::PARALLELIZE:
+                schedule_str += "P("+comps_list_str+",L"+std::to_string(optim.l0)+"),";
+                break;
+
+            case optimization_type::SKEWING:
+                schedule_str += "S("+comps_list_str+",L"+std::to_string(optim.l0)+",L"+std::to_string(optim.l1)+","+
+                                std::to_string(optim.l0_fact)+","+std::to_string(optim.l1_fact)+"),";
+                break;
+
+            default:
+                break;
+        }
+        if (!schedule_vect.empty())
+            schedule_str.pop_back(); // remove last comma
+    }
+
+    return schedule_str;
+}
 
 bool syntax_tree::schedule_is_prunable()
 {
     // Please note that this function currently only works for single computation programs
     // The following filtering rules are selected after a statistical analysis of inefficient schedule patterns on single computation programs
 
-    assert(computations_list.size()==1 && "current implementation of syntax_tree::schedule_is_prunable() supports only single computation programs");  // assuming the ast has only one computation
+    // commented by L, we completed the sanity check
+    // assert(computations_list.size()==1 && "current implementation of syntax_tree::schedule_is_prunable() supports only single computation programs");  // assuming the ast has only one computation
+    for (auto comp:computations_list)
+    {
+        int L = comp->get_loop_levels_number(); // AST depth for the current computation
+        std::string schedule_str = get_schedule_str_comp(comp);
+        int nb = get_computation_index(comp);
 
-    int original_ast_depth = computations_list[0]->get_loop_levels_number();
-    std::string schedule_str = get_schedule_str();
-
-    if (std::regex_search(schedule_str, std::regex(R"(P\(L2\)U\(L3,\d+\))")))
-        return true;
-
-    if (original_ast_depth==2)
-        if (std::regex_search(schedule_str, std::regex(R"(P\(L1\)U)")))
+        // added by L
+        std::string regexT = R"(.*P\(\{C)" + std::to_string(nb) + R"(\},L)"+ std::to_string(L-1)+R"(\)T2\(\{C)" + std::to_string(nb) + R"(\},L)"+std::to_string(L-3)+",L"+std::to_string(L-2)+",.*";
+        //to add unrolling
+        
+        //drop either pattern
+        if (std::regex_search(schedule_str, std::regex(regexT)) )
             return true;
-
-    if (original_ast_depth==3)
-        if (std::regex_search(schedule_str, std::regex(R"(P\(L2\)(?:U|T2\(L0,L1))")))
-            return true;
-
+    }
     return false;
+
+    // Commented by L
+    // if (std::regex_search(schedule_str, std::regex(R"(P\(L2\)U\(L3,\d+\))")))
+    //     return true;
+
+//     if (original_ast_depth==2)
+//         if (std::regex_search(schedule_str, std::regex(R"(P\(L1\)U)")))
+//             return true;
+
+//     if (original_ast_depth==3)
+//         if (std::regex_search(schedule_str, std::regex(R"(P\(L2\)(?:U|T2\(L0,L1))")))
+//             return true;
+
+    // return false;
 }
 
 bool syntax_tree::can_set_default_evaluation()
 {
     // Please note that this function currently only works for single computation programs
     // The following filtering rules are selected after a statistical analysis of inefficient schedule patterns on single computation programs
-    assert(computations_list.size()==1 && "current implementation of syntax_tree::schedule_is_prunable() supports only single computation programs");  // assuming the ast has only one computation
+    // assert(computations_list.size()==1 && "current implementation of syntax_tree::schedule_is_prunable() supports only single computation programs");  // assuming the ast has only one computation
 
-    int original_ast_depth = computations_list[0]->get_loop_levels_number();
-    std::string schedule_str = get_schedule_str();
+    // added by L
+    for (auto comp:computations_list)
+    {
+        int L = comp->get_loop_levels_number(); // AST depth for the current computation
+        std::string schedule_str = get_schedule_str_comp(comp);
+        int nb = get_computation_index(comp);
 
-    //check if innermost loop is parallelized, if yes set the speedup to 0.001
-    if (original_ast_depth==2)
-        if (std::regex_search(schedule_str, std::regex(R"(P\(L1\)$)")))
+        std::string regexP = R"(.*P\(\{C)" + std::to_string(nb) + R"(\},L)" + std::to_string(L-1) + R"(\)$)";
+        
+        if (std::regex_search(schedule_str, std::regex(regexP)) )
         {
             evaluation =  std::atof(read_env_var("INIT_EXEC_TIME"))*1000;
             return true;
         }
-
-    if (original_ast_depth==3)
-        if (std::regex_search(schedule_str, std::regex(R"(P\(L2\)$)")))
-        {
-            evaluation =  std::atof(read_env_var("INIT_EXEC_TIME"))*1000;
-            return true;
-        }
-
+    }
     return false;
+        
+//     //check if innermost loop is parallelized, if yes set the speedup to 0.001
+//     if (original_ast_depth==2)
+//         if (std::regex_search(schedule_str, std::regex(R"(P\(L1\)$)")))
+//         {
+//             evaluation =  std::atof(read_env_var("INIT_EXEC_TIME"))*1000;
+//             return true;
+//         }
+
+//     if (original_ast_depth==3)
+//         if (std::regex_search(schedule_str, std::regex(R"(P\(L2\)$)")))
+//         {
+//             evaluation =  std::atof(read_env_var("INIT_EXEC_TIME"))*1000;
+//             return true;
+//         }
+
+//     return false;
 }
 
 std::vector<ast_node*> ast_node::collect_heads_of_ast(int allowed_splits, ast_node* current)

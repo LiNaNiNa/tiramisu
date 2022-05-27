@@ -188,7 +188,19 @@ void beam_search::search_save(syntax_tree& ast, std::vector<std::string> *schedu
     while (iterator != children.end())
     {
         (*iterator)->transform_ast();
-        if ((*iterator)->ast_is_legal() == false) {
+        if ((*iterator)->schedule_is_prunable()){
+            if (std::atoi(read_env_var("AS_VERBOSE"))==1){
+                // print deleted Ast
+                (*iterator)->print_previous_optims();
+                std::cout << "\n-----------" << std::endl;
+                (*iterator)->print_new_optims();
+                (*iterator)->print_ast();
+                std::cout << "\n<Schedule pruned>\n";
+            }
+            delete (*iterator);
+            iterator = children.erase(iterator);
+        }
+        else if ((*iterator)->ast_is_legal() == false) {
             // print deleted Ast
             (*iterator)->print_previous_optims();
             std::cout << "\n-----------" << std::endl;
@@ -209,9 +221,21 @@ void beam_search::search_save(syntax_tree& ast, std::vector<std::string> *schedu
 //            (*iterator)->print_computations_accesses();
             std::cout << "\n<legal>\n";
 
+//             std::vector<float> measurements;
+//             measurements = exec_eval->get_measurements(**iterator, false, schedule_timeout);
+            
+            //added by L
             std::vector<float> measurements;
-            measurements = exec_eval->get_measurements(**iterator, false, schedule_timeout);
-            (*iterator)->evaluation = min_eval(measurements);
+            if ((*iterator)->can_set_default_evaluation()) { // if yes the child's evaluation is set to a default value
+                measurements = {(*iterator)->evaluation};
+            }
+            else{
+                measurements = exec_eval->get_measurements(**iterator, false, schedule_timeout);
+                (*iterator)->evaluation = min_eval(measurements);
+            }
+            
+            
+//             (*iterator)->evaluation = min_eval(measurements);
 
             parent_trace->add_child_path((*iterator), schedules_annotations->size());
 

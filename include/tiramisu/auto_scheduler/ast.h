@@ -820,6 +820,12 @@ public:
     std::string get_schedule_str();
 
     /**
+     * Encodes the transformations applied to ONE branch of the ast as a string, for just one computation given as input. this is used for saving the exploration trace while
+     * sampling schedules
+     */
+    std::string get_schedule_str_comp(tiramisu::computation *comp);
+
+    /**
      * Predicts if the schedule applied to the ast is worth evaluating and exploring further.
      */
     bool schedule_is_prunable();
